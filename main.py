@@ -5,18 +5,11 @@ import os
 from flask import Flask
 from threading import Thread
 
-# Flask (Web Server - Render'ın botu uyutmaması için)
 app = Flask(__name__)
 @app.route('/')
-def home():
-    return "Bot ve Render hizmeti aktif!"
+def home(): return "Bot aktivdir!"
 
-def run_web_server():
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
-
-# Render için FFmpeg yolu
-FFMPEG_PATH = "ffmpeg" 
-CHANNEL_ID = int(os.environ.get("CHANNEL_ID")) # Render Environment Variable'dan al
+def run_web_server(): app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
 
 class RenderBot(commands.Bot):
     def __init__(self, token):
@@ -24,32 +17,35 @@ class RenderBot(commands.Bot):
         self.token = token
 
     async def on_ready(self):
-        print(f"Giriş yapıldı: {self.user}")
-        channel = self.get_channel(CHANNEL_ID)
+        print(f"Logged in: {self.user}")
+        channel = self.get_channel(int(os.environ.get("CHANNEL_ID")))
         if channel:
             try:
                 vc = await channel.connect()
-                self.play_loop(vc)
+                print(f"Kanalda çalınır: {channel.name}")
+                self.play_audio(vc)
             except Exception as e:
-                print(f"Hata: {e}")
+                print(f"Bağlantı xətası: {e}")
 
-    def play_loop(self, vc):
-        if not vc.is_playing():
-            # Döngüsel ses oynatma
-            audio = discord.FFmpegPCMAudio("ses.mp3", executable=FFMPEG_PATH)
-            vc.play(audio, after=lambda e: self.play_loop(vc))
+    def play_audio(self, vc):
+        # Faylın tam yolu və düzgün ffmpeg parametrləri
+        audio_source = discord.FFmpegPCMAudio(
+            "ses.mp3", 
+            executable="ffmpeg",
+            options="-re -stream_loop -1" # -re: real-time, -stream_loop: sonsuz döngü
+        )
+        vc.play(audio_source, after=lambda e: print(f"Səs dayandı: {e}") if e else None)
 
 async def main():
-    # Web sunucusunu arka planda başlat
     Thread(target=run_web_server).start()
-    
-    # Tokenları Environment Variable'dan (virgülle ayırarak) al
     tokens = os.environ.get("TOKENS").split(",")
-    bots = [RenderBot(t) for t in tokens]
-    
-    # Tüm botları başlat
-    await asyncio.gather(*(b.start(b.token) for b in bots))
+    # Tokenları ardıcıl başlatmaq bağlantı xətalarını azaldır
+    for t in tokens:
+        bot = RenderBot(t)
+        asyncio.create_task(bot.start(t))
+        await asyncio.sleep(2) # Hər bot arasına gecikmə qoy
+    await asyncio.Event().wait()
 
 if __name__ == "__main__":
     asyncio.run(main())
-  
+    
